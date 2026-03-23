@@ -1,0 +1,95 @@
+import os
+import uuid
+import tempfile
+from pathlib import Path
+from datetime import datetime
+from werkzeug.utils import secure_filename
+from flask import Flask, render_template, request, redirect, url_for, send_file, flash
+
+# 导入工具函数
+from utils.pdf_extractor import extract_pdf_text
+from utils.prompt_builder import build_prompt
+from utils.api_client import call_deepseek_api
+from utils.pdf_generator import generate_pdf
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'dev-key-change-in-production'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
+app.config['ALLOWED_EXTENSIONS'] = {'pdf'}
+
+Path(app.config['UPLOAD_FOLDER']).mkdir(exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/generate', methods=['POST'])
+def generate():
+    research_topic = request.form.get('research_topic', '').strip()
+    api_key = request.form.get('api_key', '').strip()
+    files = request.files.getlist('pdf_files')
+    
+    if not research_topic:
+        flash('请输入研究主题', 'error')
+        return redirect(url_for('index'))
+    
+    if not api_key:
+        flash('请输入 DeepSeek API Key', 'error')
+        return redirect(url_for('index'))
+    
+    if not files or files[0].filename == '':
+        flash('请上传至少一个 PDF 文件', 'error')
+        return redirect(url_for('index'))
+    
+    temp_pdf_paths = []
+    extracted_texts = []
+    
+    try:
+        for file in files:
+            if file and allowed_file(file.filename):
+                filename = secure_filename(file.filename)
+                unique_filename = f"{uuid.uuid4().hex}_{filename}"
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                file.save(filepath)
+                temp_pdf_paths.append(filepath)
+                text = extract_pdf_text(filepath)
+                extracted_texts.append(text)
+            else:
+                flash(f'文件 {file.filename} 格式不支持', 'error')
+                for path in temp_pdf_paths:
+                    if os.path.exists(path):
+                        os.remove(path)
+                return redirect(url_for('index'))
+        
+        combined_text = "\n\n".join(extracted_texts)
+        prompt = build_prompt(research_topic, combined_text)
+        literature_review = call_deepseek_api(prompt, api_key)
+        
+        output_filename = f"literature_review_{uuid.uuid4().hex}.pdf"
+        output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+        generate_pdf(literature_review, research_topic, output_path)
+        
+        return render_template('result.html', pdf_filename=output_filename, research_topic=research_topic)
+    
+    except Exception as e:
+        flash(f'处理失败: {str(e)}', 'error')
+        return redirect(url_for('index'))
+    finally:
+        for path in temp_pdf_paths:
+            if os.path.exists(path):
+                os.remove(path)
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(filepath):
+        flash('文件不存在', 'error')
+        return redirect(url_for('index'))
+    return send_file(filepath, as_attachment=True, download_name=f"literature_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)

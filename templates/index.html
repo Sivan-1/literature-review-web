@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文献综述自动生成系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding: 50px 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .card-header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .card-body {
+            padding: 40px;
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .file-upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .file-upload-area:hover {
+            border-color: #667eea;
+            background: #f8f9fa;
+        }
+        
+        .file-list {
+            margin-top: 15px;
+        }
+        
+        .file-item {
+            background: #f8f9fa;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .alert-error {
+            background: #fee;
+            color: #c33;
+            border: 1px solid #fcc;
+        }
+        
+        .loader {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .mt-20 {
+            margin-top: 20px;
+        }
+        
+        small {
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="card-header">
+                <h1>📚 文献综述自动生成系统</h1>
+                <p>基于 DeepSeek AI 的智能文献分析工具</p>
+            </div>
+            <div class="card-body">
+                <form id="uploadForm" action="/generate" method="post" enctype="multipart/form-data">
+                    <div class="form-group">
+                        <label>🔬 研究主题</label>
+                        <input type="text" name="research_topic" placeholder="例如：深度学习在医学图像分析中的应用" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>🔑 DeepSeek API Key</label>
+                        <input type="password" name="api_key" placeholder="请输入您的 DeepSeek API Key" required>
+                        <small>您的 API Key 仅用于本次请求，不会被存储</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>📄 上传 PDF 文献</label>
+                        <div class="file-upload-area" onclick="document.getElementById('pdf_files').click()">
+                            <input type="file" id="pdf_files" name="pdf_files" accept=".pdf" multiple style="display: none;">
+                            <div>📁 点击选择 PDF 文件</div>
+                            <small>支持多选，每个文件不超过 16MB</small>
+                        </div>
+                        <div id="fileList" class="file-list"></div>
+                    </div>
+                    
+                    <div id="loading" style="display: none;">
+                        <div class="loader"></div>
+                        <div class="text-center">正在生成文献综述，请稍候...（可能需要 1-2 分钟）</div>
+                    </div>
+                    
+                    <button type="submit" id="submitBtn">🚀 开始生成文献综述</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('pdf_files').addEventListener('change', function(e) {
+            const fileList = document.getElementById('fileList');
+            fileList.innerHTML = '';
+            const files = Array.from(e.target.files);
+            files.forEach(file => {
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `<span>📄 ${file.name}</span><span>${(file.size / 1024).toFixed(2)} KB</span>`;
+                fileList.appendChild(div);
+            });
+        });
+        
+        document.getElementById('uploadForm').addEventListener('submit', function() {
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('submitBtn').innerHTML = '⏳ 处理中，请稍候...';
+        });
+    </script>
+</body>
+</html>
