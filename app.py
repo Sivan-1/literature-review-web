@@ -92,4 +92,8 @@ def download_file(filename):
     return send_file(filepath, as_attachment=True, download_name=f"literature_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    # 生产环境配置（通过环境变量判断）
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    debug = os.environ.get('FLASK_DEBUG', 'False') == 'True'
+    app.run(host='0.0.0.0', port=port, debug=debug)
