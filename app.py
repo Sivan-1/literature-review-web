@@ -92,7 +92,8 @@ def download_file(filename):
     return send_file(filepath, as_attachment=True, download_name=f"literature_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
 
 
+app = app
+
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
