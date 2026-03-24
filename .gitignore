@@ -5,3 +5,4 @@ venv/
 uploads/
 *.pdf
 .DS_Store
+.vercel

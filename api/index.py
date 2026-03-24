@@ -1,11 +1,13 @@
 """
-Vercel Serverless Function 入口
+Vercel Serverless Function - 完整版文献综述生成系统
 """
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, render_template_string, send_file
 import os
 import sys
 import uuid
 import tempfile
+import io
+from datetime import datetime
 from werkzeug.utils import secure_filename
 
 # 添加项目根目录到路径
@@ -18,14 +20,10 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['UPLOAD_FOLDER'] = tempfile.mkdtemp()
 
 # 导入工具函数
-try:
-    from utils.pdf_extractor import extract_pdf_text
-    from utils.prompt_builder import build_prompt
-    from utils.api_client import call_deepseek_api
-    from utils.pdf_generator import generate_pdf
-    print("✅ 工具函数导入成功")
-except Exception as e:
-    print(f"⚠️ 工具函数导入失败: {e}")
+from utils.pdf_extractor import extract_pdf_text
+from utils.prompt_builder import build_prompt
+from utils.api_client import call_deepseek_api
+from utils.pdf_generator import generate_pdf
 
 # HTML 模板
 HTML_TEMPLATE = '''
@@ -71,7 +69,6 @@ HTML_TEMPLATE = '''
             border: 2px solid #e0e0e0;
             border-radius: 10px;
             font-size: 14px;
-            transition: border-color 0.3s;
         }
         input:focus {
             outline: none;
@@ -167,10 +164,6 @@ HTML_TEMPLATE = '''
                     
                     <button type="submit" id="submitBtn">🚀 开始生成文献综述</button>
                 </form>
-                
-                <div class="text-center small" style="margin-top: 20px;">
-                    ✅ 系统运行正常 | Vercel 部署成功
-                </div>
             </div>
         </div>
     </div>
@@ -291,15 +284,68 @@ def index():
         if not files or files[0].filename == '':
             return render_template_string(HTML_TEMPLATE, error='请上传至少一个 PDF 文件')
         
-        # 这里处理 PDF 生成逻辑
-        # 由于 Vercel 有执行时间限制（10秒），复杂处理建议用外部服务
+        # 处理 PDF 文件
+        temp_pdf_paths = []
+        extracted_texts = []
         
-        return render_template_string(HTML_TEMPLATE, success=f'收到请求！主题：{research_topic}，文件数：{len(files)}')
+        try:
+            for file in files:
+                if file and file.filename.endswith('.pdf'):
+                    filename = secure_filename(file.filename)
+                    unique_filename = f"{uuid.uuid4().hex}_{filename}"
+                    filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+                    file.save(filepath)
+                    temp_pdf_paths.append(filepath)
+                    
+                    # 提取文本
+                    text = extract_pdf_text(filepath)
+                    extracted_texts.append(text)
+                else:
+                    return render_template_string(HTML_TEMPLATE, error=f'文件 {file.filename} 格式不支持')
+            
+            # 合并文本
+            combined_text = "\n\n".join(extracted_texts)
+            
+            # 构建提示词
+            prompt = build_prompt(research_topic, combined_text)
+            
+            # 调用 API
+            literature_review = call_deepseek_api(prompt, api_key)
+            
+            # 生成 PDF
+            output_filename = f"literature_review_{uuid.uuid4().hex}.pdf"
+            output_path = os.path.join(app.config['UPLOAD_FOLDER'], output_filename)
+            generate_pdf(literature_review, research_topic, output_path)
+            
+            # 返回结果页面
+            download_url = f"/download/{output_filename}"
+            return render_template_string(RESULT_TEMPLATE, 
+                                         research_topic=research_topic,
+                                         download_url=download_url)
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"错误: {error_msg}")
+            return render_template_string(HTML_TEMPLATE, error=f'处理失败: {error_msg}')
+        finally:
+            # 清理临时文件
+            for path in temp_pdf_paths:
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except:
+                    pass
     
     return render_template_string(HTML_TEMPLATE)
 
-# Vercel 需要导出的 handler
-app.debug = False
+@app.route('/download/<filename>')
+def download_file(filename):
+    """下载生成的 PDF 文件"""
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    if not os.path.exists(filepath):
+        return render_template_string(HTML_TEMPLATE, error='文件不存在')
+    return send_file(filepath, as_attachment=True, 
+                     download_name=f"literature_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
 
-# 导出 application 供 Vercel 使用
+# Vercel 需要导出的 handler
 application = app
