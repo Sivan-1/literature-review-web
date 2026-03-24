@@ -6,7 +6,7 @@ from datetime import datetime
 from werkzeug.utils import secure_filename
 from flask import Flask, render_template, request, redirect, url_for, send_file, flash
 
-# 瀵煎叆宸ュ叿鍑芥暟
+# 导入工具函数
 from utils.pdf_extractor import extract_pdf_text
 from utils.prompt_builder import build_prompt
 from utils.api_client import call_deepseek_api
@@ -34,15 +34,15 @@ def generate():
     files = request.files.getlist('pdf_files')
     
     if not research_topic:
-        flash('璇疯緭鍏ョ爺绌朵富棰?, 'error')
+        flash('请输入研究主题', 'error')
         return redirect(url_for('index'))
     
     if not api_key:
-        flash('璇疯緭鍏?DeepSeek API Key', 'error')
+        flash('请输入 DeepSeek API Key', 'error')
         return redirect(url_for('index'))
     
     if not files or files[0].filename == '':
-        flash('璇蜂笂浼犺嚦灏戜竴涓?PDF 鏂囦欢', 'error')
+        flash('请上传至少一个 PDF 文件', 'error')
         return redirect(url_for('index'))
     
     temp_pdf_paths = []
@@ -59,7 +59,7 @@ def generate():
                 text = extract_pdf_text(filepath)
                 extracted_texts.append(text)
             else:
-                flash(f'鏂囦欢 {file.filename} 鏍煎紡涓嶆敮鎸?, 'error')
+                flash(f'文件 {file.filename} 格式不支持', 'error')
                 for path in temp_pdf_paths:
                     if os.path.exists(path):
                         os.remove(path)
@@ -76,7 +76,7 @@ def generate():
         return render_template('result.html', pdf_filename=output_filename, research_topic=research_topic)
     
     except Exception as e:
-        flash(f'澶勭悊澶辫触: {str(e)}', 'error')
+        flash(f'处理失败: {str(e)}', 'error')
         return redirect(url_for('index'))
     finally:
         for path in temp_pdf_paths:
@@ -87,7 +87,7 @@ def generate():
 def download_file(filename):
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(filepath):
-        flash('鏂囦欢涓嶅瓨鍦?, 'error')
+        flash('文件不存在', 'error')
         return redirect(url_for('index'))
     return send_file(filepath, as_attachment=True, download_name=f"literature_review_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
 
